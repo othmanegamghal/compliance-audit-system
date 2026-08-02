@@ -82,6 +82,31 @@ Mot de passe commun : **Demo1234!**
 - Quand **toutes** les actions d'une non-conformité sont `completed`, la non-conformité passe à
   `action_completed` et l'auditeur d'origine est notifié pour validation.
 
+## Génération IA du rapport d'audit (Claude / Anthropic)
+
+À la clôture d'un audit, l'auditeur peut générer une **synthèse rédigée par l'IA**
+(résumé exécutif, constats majeurs, recommandations, conclusion) à partir des
+réponses, des non-conformités et du taux de conformité.
+
+Configuration — **option gratuite (Groq)**, recommandée :
+1. Créer un compte gratuit sur https://console.groq.com (sans carte bancaire)
+2. Créer une clé API (« API Keys ») — elle commence par `gsk_`
+3. La renseigner dans `backend/.env` : `GROQ_API_KEY=gsk_...`
+4. Redémarrer le serveur.
+
+Option payante facultative : `ANTHROPIC_API_KEY=sk-ant-...` (Claude). Si les deux
+sont présentes, Groq est prioritaire.
+
+Sans aucune clé, l'endpoint renvoie un message clair (503) et l'interface l'affiche.
+
+- `POST /api/reports/audits/{id}/generate-ai` (auditor/admin/direction) — génère et stocke le rapport IA.
+- `GET  /api/reports/audits/{id}/ai` — renvoie le dernier rapport IA (ou `null`).
+- Le contenu IA est aussi intégré dans le PDF (`GET /api/reports/audits/{id}/pdf`).
+
+Fournisseur par défaut : **Groq** (`llama-3.3-70b-versatile`, configurable via `GROQ_MODEL`),
+appelé en HTTP direct (`httpx`, aucun SDK à installer). Le rapport est sérialisé en JSON
+dans la colonne `rapport.contenu` (migration `db/003_alter_rapport_ai.sql`).
+
 ## Réinitialiser les données de démo
 ```bash
 # Vider puis re-remplir (voir commande TRUNCATE dans l'historique du projet), puis :

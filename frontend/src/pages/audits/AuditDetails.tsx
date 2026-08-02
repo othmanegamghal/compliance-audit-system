@@ -5,6 +5,7 @@ import { Badge } from '../../components/ui/Badge';
 import { ProgressBar } from '../../components/ui/ProgressBar';
 import { Tabs } from '../../components/ui/Tabs';
 import { CommentsPanel } from '../../components/ui/CommentsPanel';
+import { AIReportPanel } from '../../components/ui/AIReportPanel';
 import { useNotifications } from '../../context/NotificationContext';
 import {
   ArrowLeft,
@@ -439,6 +440,9 @@ export const AuditDetails: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* AI-generated audit report */}
+      <AIReportPanel auditId={audit.id} auditClosed={audit.status === 'closed'} />
 
       {/* Collaboration */}
       <CommentsPanel auditId={audit.id} />

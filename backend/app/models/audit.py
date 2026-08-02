@@ -52,4 +52,5 @@ class Rapport(Base):
     id_utilisateur = Column(Integer, ForeignKey("utilisateur.id_utilisateur"), nullable=False)
     type = Column(String(50))
     nom_fichier = Column(String(150))
+    contenu = Column(Text)
     date_generation = Column(DateTime, server_default=func.now())

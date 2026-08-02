@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .api import (
     actions,
+    assistant,
     audits,
     auth,
     categories,
@@ -55,6 +56,7 @@ app.include_router(history.router, prefix=api_prefix)
 app.include_router(permissions.router, prefix=api_prefix)
 app.include_router(stats.router, prefix=api_prefix)
 app.include_router(reports.router, prefix=api_prefix)
+app.include_router(assistant.router, prefix=api_prefix)
 
 
 @app.get("/api/health")

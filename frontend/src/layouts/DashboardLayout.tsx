@@ -7,6 +7,7 @@ import { useLocale } from '../context/LocaleContext';
 import { canView } from '../auth/permissions';
 import { Breadcrumb } from '../components/ui/Breadcrumb';
 import { ToastContainer } from '../components/ui/ToastContainer';
+import { AIAssistant } from '../components/ui/AIAssistant';
 import {
   ShieldCheck,
   ShieldAlert,
@@ -114,6 +115,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
   return (
     <div className="min-h-screen flex bg-slate-50 dark:bg-darkbg text-slate-800 dark:text-slate-100 transition-colors duration-200">
       <ToastContainer />
+      <AIAssistant />
 
       {/* MOBILE SIDEBAR OVERLAY */}
       {sidebarOpen && (

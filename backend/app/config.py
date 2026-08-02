@@ -9,6 +9,11 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173"
     upload_dir: str = "uploads"
     demo_password: str = "Demo1234!"
+    # IA — fournisseur gratuit (Groq) prioritaire, Anthropic en option payante.
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
+    anthropic_api_key: str = ""
+    ai_model: str = "claude-opus-4-8"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

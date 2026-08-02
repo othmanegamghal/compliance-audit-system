@@ -6,12 +6,38 @@ from sqlalchemy.orm import Session
 from .. import models
 from ..database import get_db
 from ..notifications_service import notify
+from ..ai_service import AINotConfiguredError, suggest_corrective_action
+from ..schemas.ai import SuggestActionOut
 from ..schemas.finding import FindingOut, FindingUpdate
 from ..scoping import manager_can_touch_finding, scoped_finding_ids
 from ..serializers import finding_to_out
 from .deps import get_current_user, require_roles
 
 router = APIRouter(prefix="/findings", tags=["findings"])
+
+
+@router.post("/{finding_id}/suggest-action", response_model=SuggestActionOut)
+def suggest_action(
+    finding_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.Utilisateur = Depends(require_roles("auditor", "manager")),
+):
+    finding = db.get(models.NonConformite, finding_id)
+    if finding is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Non-conformité introuvable")
+    if not manager_can_touch_finding(db, current_user, finding_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Non-conformité hors de votre département")
+
+    description = finding.description or finding.titre or "Non-conformité"
+    try:
+        result = suggest_corrective_action(description, finding.gravite)
+    except AINotConfiguredError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Suggestion IA échouée : {exc}")
+
+    due = (date.today() + timedelta(days=result["dueInDays"])).isoformat()
+    return SuggestActionOut(action=result["action"], dueDate=due)
 
 
 @router.get("", response_model=list[FindingOut])

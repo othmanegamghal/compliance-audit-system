@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response, StreamingResponse
@@ -8,6 +9,8 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.platypus import (
+    ListFlowable,
+    ListItem,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -17,11 +20,79 @@ from reportlab.platypus import (
 from sqlalchemy.orm import Session
 
 from .. import models
+from ..ai_service import AINotConfiguredError, active_model, generate_audit_report
+from ..config import settings
 from ..database import get_db
+from ..history_service import log
+from ..schemas.report_ai import AIReportOut
 from ..serializers import CONFORMITE_TO_VALUE, audit_score, iso
-from .deps import get_current_user
+from .deps import get_current_user, require_roles
 
 router = APIRouter(prefix="/reports", tags=["reports"])
+
+
+def _latest_ai_report(db: Session, audit_id: int) -> models.Rapport | None:
+    return (
+        db.query(models.Rapport)
+        .filter(models.Rapport.id_audit == audit_id, models.Rapport.type == "ai_report")
+        .order_by(models.Rapport.id_rapport.desc())
+        .first()
+    )
+
+
+@router.post("/audits/{audit_id}/generate-ai", response_model=AIReportOut)
+def generate_ai_report(
+    audit_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.Utilisateur = Depends(require_roles("auditor", "admin", "direction")),
+):
+    audit = db.get(models.Audit, audit_id)
+    if audit is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audit introuvable")
+
+    try:
+        content = generate_audit_report(db, audit)
+    except AINotConfiguredError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001 — surface a readable message to the UI
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"La génération IA a échoué : {exc}",
+        )
+
+    rapport = models.Rapport(
+        id_audit=audit_id,
+        id_utilisateur=current_user.id_utilisateur,
+        type="ai_report",
+        nom_fichier=f"rapport_ia_audit_{audit_id}.json",
+        contenu=json.dumps(content, ensure_ascii=False),
+    )
+    db.add(rapport)
+    db.commit()
+    db.refresh(rapport)
+    log(db, current_user.id_utilisateur, "generate_ai_report", f"Rapport IA généré pour l'audit \"{audit.titre}\".", audit_id=audit_id)
+    db.commit()
+
+    return AIReportOut(
+        auditId=str(audit_id),
+        generatedAt=iso(rapport.date_generation) or "",
+        model=active_model(),
+        **content,
+    )
+
+
+@router.get("/audits/{audit_id}/ai", response_model=AIReportOut | None)
+def get_ai_report(audit_id: int, db: Session = Depends(get_db), _: models.Utilisateur = Depends(get_current_user)):
+    rapport = _latest_ai_report(db, audit_id)
+    if rapport is None or not rapport.contenu:
+        return None
+    content = json.loads(rapport.contenu)
+    return AIReportOut(
+        auditId=str(audit_id),
+        generatedAt=iso(rapport.date_generation) or "",
+        model=active_model(),
+        **content,
+    )
 
 VALUE_LABEL = {"yes": "Conforme", "partial": "Partiel", "no": "Non conforme", None: "N/A"}
 
@@ -76,6 +147,31 @@ def audit_pdf(audit_id: int, db: Session = Depends(get_db), _: models.Utilisateu
     ]))
     elements.append(meta_table)
     elements.append(Spacer(1, 16))
+
+    # AI-generated synthesis (if a report was generated)
+    ai_rapport = _latest_ai_report(db, audit_id)
+    if ai_rapport and ai_rapport.contenu:
+        ai = json.loads(ai_rapport.contenu)
+        elements.append(Paragraph("Synthèse (générée par IA)", h2))
+        elements.append(Spacer(1, 4))
+        elements.append(Paragraph(ai.get("executiveSummary", ""), small))
+        elements.append(Spacer(1, 8))
+
+        def _bullets(title: str, items: list[str]):
+            elements.append(Paragraph(title, ParagraphStyle("h3", parent=small, fontName="Helvetica-Bold", fontSize=10, textColor=colors.HexColor("#1E3A8A"))))
+            if items:
+                elements.append(ListFlowable(
+                    [ListItem(Paragraph(it, small), leftIndent=6) for it in items],
+                    bulletType="bullet", start="•", leftIndent=10,
+                ))
+            elements.append(Spacer(1, 8))
+
+        _bullets("Constats majeurs", ai.get("majorFindings", []))
+        _bullets("Recommandations", ai.get("recommendations", []))
+        if ai.get("conclusion"):
+            elements.append(Paragraph("Conclusion", ParagraphStyle("h3c", parent=small, fontName="Helvetica-Bold", fontSize=10, textColor=colors.HexColor("#1E3A8A"))))
+            elements.append(Paragraph(ai["conclusion"], small))
+        elements.append(Spacer(1, 16))
 
     # Answers table
     elements.append(Paragraph("Réponses de la checklist", h2))

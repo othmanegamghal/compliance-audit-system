@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
+import { useLocale } from '../../context/LocaleContext';
 import { can } from '../../auth/permissions';
 import { Badge } from '../../components/ui/Badge';
 import { Drawer } from '../../components/ui/Drawer';
 import { useNotifications } from '../../context/NotificationContext';
+import { aiApi } from '../../api/ai';
+import { apiErrorMessage } from '../../api/client';
+import { Sparkles } from 'lucide-react';
 import {
   FileWarning,
   Search,
@@ -19,6 +23,7 @@ import type { NonConformityStatus, SeverityLevel } from '../../types';
 export const NonConformityList: React.FC = () => {
   const { findings, audits, users, updateFindingStatus, departments } = useData();
   const { currentUser } = useAuth();
+  const { t } = useLocale();
   const { addToast } = useNotifications();
 
   // Filters State
@@ -33,6 +38,22 @@ export const NonConformityList: React.FC = () => {
   // Corrective action assignment form state
   const [correctiveActionText, setCorrectiveActionText] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const [aiSuggesting, setAiSuggesting] = useState(false);
+
+  const handleSuggestAction = async () => {
+    if (!selectedFindingId) return;
+    setAiSuggesting(true);
+    try {
+      const s = await aiApi.suggestAction(selectedFindingId);
+      setCorrectiveActionText(s.action);
+      setDueDate(s.dueDate);
+      addToast(t('aisug.done'), 'success');
+    } catch (err) {
+      addToast(apiErrorMessage(err, t('ai.failed')), 'danger');
+    } finally {
+      setAiSuggesting(false);
+    }
+  };
 
   const handleOpenDetails = (findingId: string) => {
     const finding = findings.find((f) => f.id === findingId);
@@ -271,10 +292,25 @@ export const NonConformityList: React.FC = () => {
             {/* Sub-workflow 1: If open, show correct assignment Form (for manager/auditors) */}
             {activeFinding.status === 'open' && can(currentUser?.role, 'findings.manage') && (
               <form onSubmit={handleSaveAction} className="space-y-4 border-t border-slate-100 dark:border-slate-800 pt-5">
-                <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wide">
-                  Assign Corrective Actions
-                </h4>
-                
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wide">
+                    Assign Corrective Actions
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={handleSuggestAction}
+                    disabled={aiSuggesting}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gradient-to-tr from-violet-600 to-indigo-600 hover:opacity-90 text-white text-[10px] font-bold shadow-sm transition-all disabled:opacity-60"
+                  >
+                    {aiSuggesting ? (
+                      <span className="h-3 w-3 border-2 border-white border-t-transparent animate-spin rounded-full" />
+                    ) : (
+                      <Sparkles className="h-3.5 w-3.5" />
+                    )}
+                    {aiSuggesting ? t('aisug.loading') : t('aisug.button')}
+                  </button>
+                </div>
+
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-500 block uppercase tracking-wide">
                     Action Plan Description

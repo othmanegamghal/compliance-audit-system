@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
+import { useLocale } from '../../context/LocaleContext';
 import { can } from '../../auth/permissions';
 import { Badge } from '../../components/ui/Badge';
 import { useNotifications } from '../../context/NotificationContext';
+import { aiApi } from '../../api/ai';
+import { apiErrorMessage } from '../../api/client';
 import {
   FileText,
   Plus,
@@ -12,12 +15,14 @@ import {
   ArrowLeft,
   Save,
   Clock,
+  Sparkles,
 } from 'lucide-react';
 import type { Question } from '../../types';
 
 export const TemplateList: React.FC = () => {
   const { templates, createTemplate, users } = useData();
   const { currentUser } = useAuth();
+  const { t } = useLocale();
   const { addToast } = useNotifications();
 
   // Mode state: 'list' or 'create'
@@ -29,6 +34,30 @@ export const TemplateList: React.FC = () => {
   const [questions, setQuestions] = useState<Omit<Question, 'id'>[]>([
     { text: 'Is there a formal document control policy established?', category: 'Documentation' },
   ]);
+
+  // AI checklist generator
+  const [aiTopic, setAiTopic] = useState('');
+  const [aiCount, setAiCount] = useState(8);
+  const [aiGenerating, setAiGenerating] = useState(false);
+
+  const handleAIGenerate = async () => {
+    if (!aiTopic.trim()) {
+      addToast(t('aigen.topic'), 'warning');
+      return;
+    }
+    setAiGenerating(true);
+    try {
+      const draft = await aiApi.generateChecklist(aiTopic.trim(), aiCount);
+      setName(draft.name);
+      setDescription(draft.description);
+      if (draft.questions.length) setQuestions(draft.questions);
+      addToast(t('aigen.done'), 'success', t('aigen.title'));
+    } catch (err) {
+      addToast(apiErrorMessage(err, t('ai.failed')), 'danger', t('aigen.title'));
+    } finally {
+      setAiGenerating(false);
+    }
+  };
 
   const handleAddQuestionRow = () => {
     setQuestions([...questions, { text: '', category: 'General' }]);
@@ -184,6 +213,49 @@ export const TemplateList: React.FC = () => {
       ) : (
         /* CREATE TEMPLATE FORM & QUESTION BUILDER */
         <form onSubmit={handleSaveTemplate} className="space-y-6">
+          {/* AI checklist generator */}
+          <div className="bg-gradient-to-br from-violet-50 to-indigo-50 dark:from-violet-950/20 dark:to-indigo-950/20 border border-violet-200/60 dark:border-violet-900/40 p-5 rounded-2xl shadow-sm space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-8 rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-600 text-white flex items-center justify-center">
+                <Sparkles className="h-4.5 w-4.5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white leading-tight">{t('aigen.title')}</h3>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">{t('aigen.hint')}</p>
+              </div>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="text"
+                value={aiTopic}
+                onChange={(e) => setAiTopic(e.target.value)}
+                placeholder={t('aigen.topicPlaceholder')}
+                className="flex-1 px-3.5 py-2 text-xs rounded-xl border border-violet-200 dark:border-violet-900/50 bg-white dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-violet-500"
+              />
+              <select
+                value={aiCount}
+                onChange={(e) => setAiCount(Number(e.target.value))}
+                className="px-3 py-2 text-xs rounded-xl border border-violet-200 dark:border-violet-900/50 bg-white dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-violet-500"
+                title={t('aigen.count')}
+              >
+                {[5, 8, 10, 12].map((n) => <option key={n} value={n}>{n} {t('aigen.count').toLowerCase().includes('questions') ? '' : 'Q'}</option>)}
+              </select>
+              <button
+                type="button"
+                onClick={handleAIGenerate}
+                disabled={aiGenerating}
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-600 hover:opacity-90 text-white text-xs font-bold shadow-sm transition-all disabled:opacity-60"
+              >
+                {aiGenerating ? (
+                  <span className="h-3.5 w-3.5 border-2 border-white border-t-transparent animate-spin rounded-full" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                {aiGenerating ? t('aigen.generating') : t('aigen.generate')}
+              </button>
+            </div>
+          </div>
+
           <div className="bg-white dark:bg-darkbg-card border border-slate-200/50 dark:border-slate-800/80 p-6 rounded-2xl shadow-sm space-y-4">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white border-b border-slate-50 dark:border-slate-800/85 pb-2">
               Template Metadata
