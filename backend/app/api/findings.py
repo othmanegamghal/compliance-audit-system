@@ -9,7 +9,7 @@ from ..notifications_service import notify
 from ..ai_service import AINotConfiguredError, suggest_corrective_action
 from ..schemas.ai import SuggestActionOut
 from ..schemas.finding import FindingOut, FindingUpdate
-from ..scoping import manager_can_touch_finding, scoped_finding_ids
+from ..scoping import is_manager, manager_can_touch_finding, scoped_finding_ids
 from ..serializers import finding_to_out
 from .deps import get_current_user, require_roles
 
@@ -66,7 +66,16 @@ def update_finding(
     if payload.status == "resolved":
         finding.date_resolution = datetime.now()
 
+    # Le responsable qui prend en charge la non-conformité en devient le
+    # propriétaire. Cela permet à un responsable créé APRÈS l'audit de traiter
+    # les anciennes non-conformités de son département (qui étaient assignées à
+    # l'ancien responsable, ou à personne).
+    if payload.status == "action_pending" and is_manager(current_user):
+        finding.id_utilisateur_assigne = current_user.id_utilisateur
+
     if payload.status == "action_pending" and payload.correctiveActionText:
+        # À qui revient l'action : le responsable de la NC, sinon l'utilisateur courant.
+        owner_id = finding.id_utilisateur_assigne or current_user.id_utilisateur
         existing_action = (
             db.query(models.ActionCorrective)
             .filter(models.ActionCorrective.id_non_conformite == finding_id)
@@ -78,7 +87,7 @@ def update_finding(
                 due_date = date.fromisoformat(payload.correctiveActionDueDate)
             action = models.ActionCorrective(
                 id_non_conformite=finding_id,
-                id_utilisateur=finding.id_utilisateur_assigne,
+                id_utilisateur=owner_id,
                 description=payload.correctiveActionText,
                 date_limite=due_date,
                 statut="todo",
@@ -86,7 +95,7 @@ def update_finding(
             db.add(action)
             notify(
                 db,
-                finding.id_utilisateur_assigne,
+                owner_id,
                 "Corrective Action Assigned",
                 f"A new corrective action was assigned to you: {payload.correctiveActionText}",
                 "info",
