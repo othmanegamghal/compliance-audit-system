@@ -7,6 +7,9 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 1440
     cors_origins: str = "http://localhost:5173"
+    # Autorise toutes les URLs Vercel du projet (production + prévisualisations),
+    # dont l'URL change à chaque déploiement.
+    cors_origin_regex: str = r"https://compliance-audit-system.*\.vercel\.app"
     upload_dir: str = "uploads"
     demo_password: str = "Demo1234!"
     # IA — fournisseur gratuit (Groq) prioritaire, Anthropic en option payante.
