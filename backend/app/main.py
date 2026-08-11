@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -35,6 +37,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Assure l'existence du dossier d'uploads (le système de fichiers cloud est vierge au démarrage).
+os.makedirs(settings.upload_dir, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads")
 
 api_prefix = "/api"
